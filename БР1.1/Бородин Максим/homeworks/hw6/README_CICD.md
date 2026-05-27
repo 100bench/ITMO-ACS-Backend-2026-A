@@ -1,49 +1,73 @@
-# ДЗ6 — Настройка GitHub Actions
+# ДЗ6 — GitHub Actions: CI и autodeploy
 **Бородин Максим, БР1.1**
 
-Workflow-файл расположен в `.github/workflows/ci.yml` в корне репозитория.
+## Файлы
 
-## Триггеры
+| Файл | Назначение |
+|------|------------|
+| [.github/workflows/ci.yml](../../../../.github/workflows/ci.yml) | CI + деплой на `main` |
+| [scripts/server-setup.sh](scripts/server-setup.sh) | Первичная настройка VPS |
 
-- Push и Pull Request в любую ветку, если изменения затрагивают `БР1.1/Бородин Максим/labs/lab1/**`
+## Триггеры workflow
 
-## Jobs
+| Событие | Что запускается |
+|---------|-----------------|
+| `push` / `pull_request` | Сборка lab1, lab2 (все сервисы + notification-service), Docker build |
+| `push` в ветку `main` | После успешного CI — job **deploy** (SSH на сервер) |
+| `workflow_dispatch` | Ручной запуск CI + deploy из вкладки Actions |
 
-### 1. build-and-lint
+Пути фильтрации: `labs/lab1`, `labs/lab2`, `homeworks`, `.github/workflows`.
 
-| Шаг | Описание |
-|---|---|
-| actions/checkout@v4 | Клонирование репозитория |
-| actions/setup-go@v5 | Установка Go 1.22 с кэшем |
-| go mod download | Загрузка зависимостей |
-| go mod verify | Проверка контрольных сумм |
-| go build ./... | Компиляция всех пакетов |
-| go vet ./... | Статический анализ |
+## Jobs CI
 
-### 2. docker-build
+### Lab 1 (монолит)
+- `lab1-build` — `go build`, `go vet`
+- `lab1-docker` — сборка Docker-образа
 
-Запускается после успешного `build-and-lint`. Собирает Docker-образ с помощью `docker/build-push-action`, используя BuildKit-кэш (GHA cache). `push: false` — образ собирается, но не публикуется (для CI-проверки).
+### Lab 2 (микросервисы)
+- `lab2-auth`, `lab2-restaurant`, `lab2-booking`, `lab2-gateway`, `lab2-notification` — build + vet
+- `lab2-docker` — сборка образов всех 5 сервисов (включая notification-service)
 
-## Для настройки деплоя (ЛР4)
+## Job deploy (autodeploy)
 
-Добавить job `deploy` после `docker-build`:
+Условие: `github.ref == refs/heads/main` и успешный `lab2-docker`.
 
-```yaml
-deploy:
-  needs: docker-build
-  runs-on: ubuntu-latest
-  if: github.ref == 'refs/heads/main'
-  steps:
-    - name: Deploy via SSH
-      uses: appleboy/ssh-action@v1
-      with:
-        host: ${{ secrets.DEPLOY_HOST }}
-        username: ${{ secrets.DEPLOY_USER }}
-        key: ${{ secrets.DEPLOY_KEY }}
-        script: |
-          cd /opt/restaurant-booking
-          docker compose pull
-          docker compose up -d
+Шаги:
+1. SSH на сервер (`appleboy/ssh-action`)
+2. `git fetch` + `git reset --hard origin/main` в каталоге репозитория
+3. `docker compose up --build -d` в `labs/lab2`
+
+## GitHub Secrets
+
+| Secret | Описание |
+|--------|----------|
+| `DEPLOY_HOST` | IP или hostname VPS |
+| `DEPLOY_USER` | Пользователь SSH (например `ubuntu`) |
+| `DEPLOY_KEY` | Приватный ключ SSH (PEM) |
+| `DEPLOY_PATH` | Путь к клону репозитория (по умолчанию `/opt/restaurant-booking`) |
+| `DEPLOY_PORT` | Порт SSH (опционально, default 22) |
+
+Без secrets job `deploy` завершится ошибкой — CI при этом останется зелёным для PR.
+
+## Подготовка сервера
+
+```bash
+# На VPS (один раз):
+bash scripts/server-setup.sh https://github.com/<user>/ITMO-ACS-Backend-2026-A.git /opt/restaurant-booking
 ```
 
-Необходимо добавить в GitHub Secrets: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_KEY`.
+На сервере должен быть установлен Docker и клон репозитория с веткой `main`.
+
+## Проверка деплоя
+
+1. Push в `main` с изменениями в `labs/lab2/`
+2. GitHub → Actions → workflow **CI** → job **Deploy lab2 to server**
+3. На сервере: `curl http://localhost:8080/restaurants` (через gateway)
+
+## Схема pipeline
+
+```
+push/PR → lab1-build → lab1-docker
+       → lab2-*-build (5 сервисов) → lab2-docker
+push main → deploy (SSH → git pull → docker compose up -d)
+```

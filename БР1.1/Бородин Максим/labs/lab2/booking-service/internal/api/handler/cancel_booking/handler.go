@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/borodin-maksim/restaurant-booking/booking-service/internal/api"
+	"github.com/borodin-maksim/restaurant-booking/booking-service/internal/infrastructure/kafka"
 	"github.com/borodin-maksim/restaurant-booking/booking-service/internal/infrastructure/middleware"
 	"github.com/go-chi/chi/v5"
 )
@@ -14,11 +15,12 @@ type useCase interface {
 }
 
 type Handler struct {
-	uc useCase
+	uc       useCase
+	notifier kafka.Notifier
 }
 
-func New(uc useCase) *Handler {
-	return &Handler{uc: uc}
+func New(uc useCase, notifier kafka.Notifier) *Handler {
+	return &Handler{uc: uc, notifier: notifier}
 }
 
 func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
@@ -30,5 +32,6 @@ func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	_ = h.notifier.NotifyBookingCancelled(r.Context(), kafka.BookingEvent{BookingID: bookingID})
 	api.RespondJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }

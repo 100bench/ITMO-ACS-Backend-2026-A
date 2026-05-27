@@ -9,6 +9,7 @@ import (
 
 	"github.com/borodin-maksim/restaurant-booking/booking-service/internal/app"
 	"github.com/borodin-maksim/restaurant-booking/booking-service/internal/infrastructure/database"
+	"github.com/borodin-maksim/restaurant-booking/booking-service/internal/infrastructure/kafka"
 )
 
 func main() {
@@ -38,10 +39,14 @@ func main() {
 
 	log.Info("connected to database")
 
+	notifier := kafka.NewNotifierFromEnv(log)
+	defer func() { _ = notifier.Close() }()
+
 	router := app.NewRouter(app.Deps{
 		Log:                  log,
 		DB:                   db.DB(),
 		RestaurantServiceURL: env("RESTAURANT_SERVICE_URL", "http://localhost:8082"),
+		EventNotifier:        notifier,
 	})
 
 	addr := fmt.Sprintf("%s:%s", env("SERVER_HOST", "0.0.0.0"), env("SERVER_PORT", "8083"))

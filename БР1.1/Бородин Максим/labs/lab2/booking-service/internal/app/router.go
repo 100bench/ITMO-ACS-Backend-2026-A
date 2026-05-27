@@ -15,6 +15,7 @@ import (
 	tableavailabilityH "github.com/borodin-maksim/restaurant-booking/booking-service/internal/api/handler/table_availability"
 	restaurantclient "github.com/borodin-maksim/restaurant-booking/booking-service/internal/infrastructure/client/restaurant"
 	bookingrepo "github.com/borodin-maksim/restaurant-booking/booking-service/internal/infrastructure/database/booking"
+	"github.com/borodin-maksim/restaurant-booking/booking-service/internal/infrastructure/kafka"
 	"github.com/borodin-maksim/restaurant-booking/booking-service/internal/infrastructure/middleware"
 	cancelbookinguc "github.com/borodin-maksim/restaurant-booking/booking-service/internal/usecase/cancel_booking"
 	createbookinguc "github.com/borodin-maksim/restaurant-booking/booking-service/internal/usecase/create_booking"
@@ -24,9 +25,10 @@ import (
 )
 
 type Deps struct {
-	Log                   *slog.Logger
-	DB                    *sql.DB
-	RestaurantServiceURL  string
+	Log                  *slog.Logger
+	DB                   *sql.DB
+	RestaurantServiceURL string
+	EventNotifier        kafka.Notifier
 }
 
 func NewRouter(d Deps) http.Handler {
@@ -39,9 +41,9 @@ func NewRouter(d Deps) http.Handler {
 	listBookingsUseCase := listbookingsuc.New(bookingRepo)
 	tableAvailabilityUseCase := tableavailabilityuc.New(bookingRepo, restClient)
 
-	createBookingHandler := createbookingH.New(createBookingUseCase)
+	createBookingHandler := createbookingH.New(createBookingUseCase, d.EventNotifier)
 	myBookingsHandler := mybookingsH.New(myBookingsUseCase)
-	cancelBookingHandler := cancelbookingH.New(cancelBookingUseCase)
+	cancelBookingHandler := cancelbookingH.New(cancelBookingUseCase, d.EventNotifier)
 	listBookingsHandler := listbookingsH.New(listBookingsUseCase)
 	tableAvailabilityHandler := tableavailabilityH.New(tableAvailabilityUseCase)
 

@@ -9,6 +9,7 @@ import (
 	"github.com/borodin-maksim/restaurant-booking/booking-service/internal/api"
 	"github.com/borodin-maksim/restaurant-booking/booking-service/internal/domain"
 	"github.com/borodin-maksim/restaurant-booking/booking-service/internal/infrastructure/middleware"
+	"github.com/borodin-maksim/restaurant-booking/booking-service/internal/infrastructure/kafka"
 	uc "github.com/borodin-maksim/restaurant-booking/booking-service/internal/usecase/create_booking"
 )
 
@@ -17,11 +18,12 @@ type useCase interface {
 }
 
 type Handler struct {
-	uc useCase
+	uc       useCase
+	notifier kafka.Notifier
 }
 
-func New(uc useCase) *Handler {
-	return &Handler{uc: uc}
+func New(uc useCase, notifier kafka.Notifier) *Handler {
+	return &Handler{uc: uc, notifier: notifier}
 }
 
 type request struct {
@@ -66,7 +68,7 @@ func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	api.RespondJSON(w, http.StatusCreated, response{
+	resp := response{
 		ID:          b.ID,
 		UserID:      b.UserID,
 		TableID:     b.TableID,
@@ -76,5 +78,12 @@ func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
 		GuestsCount: b.GuestsCount,
 		Status:      b.Status,
 		CreatedAt:   b.CreatedAt,
+	}
+	_ = h.notifier.NotifyBookingCreated(r.Context(), kafka.BookingEvent{
+		BookingID:  b.ID,
+		UserID:     b.UserID,
+		TableID:    b.TableID,
+		BookedDate: b.BookedDate,
 	})
+	api.RespondJSON(w, http.StatusCreated, resp)
 }
